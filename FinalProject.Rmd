@@ -1,0 +1,245 @@
+---
+title: "Final Project"
+author: "Rachel Gordon"
+date: "11/20/2020"
+output: html_document
+---
+# Analysis of 2020 D1 College Basketball Data
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# reads in the data from csv file
+cbb200 = read.csv("train_data.csv", header = TRUE)
+attach(cbb200)
+```
+
+# Raw Data Statistics and Graphs
+
+```{r}
+# print the basic statistics including mean, standard deviation, etc
+library(psych)
+describe(cbb200)
+```
+```{r}
+# box plot for ADJOE
+boxplot(ADJOE, main="Distribution of Adjusted Offensive Efficiency")
+```
+
+Because the box plot shows that the distribution of adjusted offensive efficiency is approximately normal, this makes it a good dependent variable to to base our model on.
+
+```{r}
+# scatter plot for ADJOE vs twoP_O
+plot(twoP_O, ADJOE, main="Offensive Efficiency vs Two-Point Shooting", xlab="Two-Point Shooting Percentage", ylab="Ajusted Offensive Efficiency")
+```
+
+There appears to be a very slight positive correlation between adjusted offensive efficiency and two-point shooting percentage.
+
+```{r}
+# scatter plot for ADJOE vs threeP_O
+plot(threeP_O, ADJOE, main="Offensive Efficiency vs Three-Point Shooting", xlab="Three-Point Shooting Percentage", ylab="Ajusted Offensive Efficiency")
+```
+
+There appears to be a slight positive correlation between adjusted offensive efficiency and three-point shooting percentage.
+
+```{r}
+# scatter plot for ADJOE vs EFG_O
+plot(EFG_O, ADJOE, main="Offensive Efficiency vs Effective Field Goal Percentage", xlab="Effective Field Goal Percentage", ylab="Ajusted Offensive Efficiency")
+```
+
+There appears to be a slight positive correlation between adjusted offensive efficiency and effective field goal percentage.
+
+```{r}
+# scatter plot for ADJOE vs ORB
+plot(ORB, ADJOE, main="Offensive Efficiency vs Offensive Rebounding Rate", xlab = "Offensive Rebounding Rate", ylab="Adjusted Offensive Efficiency")
+```
+
+It is not clear from this graph if there is a correlation between adjusted offensive efficiency and offensive rebounding rate.
+
+# Model Selection
+
+```{r}
+# full model containing all predictors in the data
+fit_full = lm(ADJOE ~ ADJDE + BARTHAG + EFG_O + EFG_D + TOR + TORD + ORB + DRB + FTR + FTRD + twoP_O + twoP_D + threeP_O + threeP_D + ADJ_T + WAB + CONF + W + G, data = cbb200)
+summary(fit_full)
+plot(fit_full)
+```
+
+```{r}
+# fit without conference indicator variables
+fit1 = lm(ADJOE ~ ADJDE + BARTHAG + EFG_O + EFG_D + TOR + TORD + ORB + DRB + FTR + FTRD + twoP_O + twoP_D + threeP_O + threeP_D + ADJ_T + WAB + W + G, data = cbb200)
+summary(fit1)
+plot(fit1)
+```
+
+Because the Adjusted R-squared value did not change significantly and only decreased by 0.0385 when we removed the indicator variables for conference from the model, and many of the indicator variables for conference were not significant in the full model, we can reasonably remove the variables for conference from the model to improve the simplicity of our model without losing too much accuracy. Additionally, the residual plot from the first model showed a slight curve that suggests a violation of the assumption of linearity, but the model with conference removed seemed to improve this assumption and shows less of a curve in the residual plot. Therefore, this is further evidence that removing conference serves to improve our model.
+
+```{r}
+fit0=lm(ADJOE ~ 1, data = cbb200)
+library(MASS)
+#Forward Selection
+step1 = stepAIC(fit0, scope=list(lower=fit0, upper=fit1),
+               direction="forward")
+step1$anova 
+```
+
+```{r}
+# model chosen from forward selection
+fit2=lm(ADJOE ~ BARTHAG + ADJDE + EFG_O + WAB + TOR + ORB + W + G + FTR + 
+    twoP_O + TORD + DRB + EFG_D + ADJ_T, data = cbb200)
+summary(fit2)
+```
+
+```{r}
+# testing fit2 for collinearity
+library(car)
+vif(fit2)
+cor(BARTHAG, WAB)
+```
+
+BARTHAG, ADJDE, WAB, and W demonstrate issues with collinearity and there is a strong correlation between BARTHAG and WAB, suggesting that it might be best to remove them from the model.
+
+```{r}
+# model without BARTHAG and WAB to improve collinearity
+fit3=lm(ADJOE ~ ADJDE + EFG_O + TOR + ORB + W + G + FTR + 
+    twoP_O + TORD + DRB + EFG_D + ADJ_T, data = cbb200)
+summary(fit3)
+```
+
+Because the adjusted R-squared decreased by only .0596 and the p-value is still less than 2.2e-16, this suggests that removing BARTHAG and WAB to improve collinearity is a reasonable choice.
+
+```{r}
+# model without insignificant predictors G and ADJ_T
+fit4=lm(ADJOE ~ ADJDE + EFG_O + TOR + ORB + W + FTR + 
+          twoP_O + TORD + DRB + EFG_D, data = cbb200)
+summary(fit4)
+```
+
+Removing the insignificant predictors G and ADJ_T from our model only decreased the adjusted R-squared by .0002, which is a very small and insignificant decrease. Therefore, we can confidently remove these predictors in the interest of improving the simplicity of our model.
+
+```{r}
+# testing fit4 for collinearity
+library(car)
+vif(fit4)
+```
+
+After adjusting for the predictors that were insignificant and strongly correlated with one another, we were able to eliminat our issues with collinearity.
+
+# Transformation
+
+```{r}
+# Box-Cox test for potential transformation
+library(MASS)
+boxcox(fit4)
+```
+
+Lambda appears to be around 0.5 on the graph
+
+```{r}
+# transformation according to Box-Cox test (lambda = 0.5)
+fit5=lm(sqrt(ADJOE) ~ ADJDE + EFG_O + TOR + ORB + W + FTR + twoP_O + TORD + DRB + EFG_D , data = cbb200)
+summary(fit5)
+```
+
+Our transformed model has a very similar R-squared and p-value to our previous models.
+
+# Testing Assumptions
+
+```{r}
+# residual plots for fit5
+k=10
+n=353
+plot(fit5)
+hist(fit5$residuals)
+```
+
+The residual plots seem to have improved significantly from our original model, as there is much less of a curve in the first residual plot and much less of an S-shape in the qq plot. Additionally, the histogram of the residuals appears to be approximately normal.
+
+```{r}
+# test constant variance of residuals for fit5
+library(lmtest)
+library(zoo)
+bptest(fit5)
+```
+
+Since our p-value of 0.7463 is greater than a significance level of alpha=.05, we fail to reject the null hypothesis that the residuals have constant variance and therefore conclude that homoscedasticity can be assumed.
+
+```{r}
+# test normality of residuals for fit5
+library(nortest)
+ad.test(fit5$residuals) 
+shapiro.test(fit5$residuals) 
+```
+
+Since our p-values of 0.5802 and 0.6984 are greater than a significance level of alpha=.05, we fail to reject the null hypothesis that the distribution of the residuals is approximately normal and therefore can assume normality. 
+
+```{r}
+# test for independence of observations within the model
+dwtest(fit5)
+```
+
+Since our p-value of 0.3568 is greater than a significance level of alpha=.05, we fail to reject the null hypothesis that the data is independent and therefore can assume independence.
+
+# Outliers and Influential Points
+
+```{r}
+# checking for outliers
+rs = rstudent(fit5) # Jackknife Residuals
+which(rs >= 3)
+```
+
+There are no outliers!
+
+```{r}
+# Cook's Distance, checking for influential points
+par(mfrow = c(1,2))
+Cd= cooks.distance(fit5)
+plot(Cd, ylab="Cook's Distance")
+qf(.5, k+1, n-k-2)
+which(Cd > .2)
+```
+
+There are no influential points!
+
+# Model Validation
+
+```{r}
+# reads in the data from csv file
+cbb20_v = read.csv("test_data.csv", header = TRUE, nrows = 176)
+attach(cbb20_v)
+
+## Model Validation
+sqrtA = sqrt(ADJOE)
+fit_fv = lm(sqrt(ADJOE) ~ ADJDE + EFG_O + TOR + ORB + W + FTR + twoP_O + TORD + DRB + EFG_D, data = cbb20_v)
+
+# Choose 4 predictors
+fit_train <- lm(sqrt(ADJOE) ~ ADJDE + EFG_O + TOR + ORB + W, data = cbb200)
+fit_validation  <- lm(ADJOE ~ ADJDE + EFG_O + TOR + ORB + W, data = cbb20_v)
+
+fitY <- predict(fit_train, new <- cbb20_v)
+MSPR <- mean((sqrtA - fitY)^2); MSPR  # MSPR
+anova(fit5)
+```
+
+Because the MSPR (.02884274) and MSE (0.00823) are very similar, our model passes the model validation
+
+# Additional Analysis 
+
+```{r}
+# testing additional research question
+# is shooting percentage significant?
+fit6=lm(sqrt(ADJOE) ~ ADJDE + TOR + ORB + W + FTR + TORD + DRB + EFG_D , data = cbb200)
+anova(fit6, fit5)
+```
+
+Because the F test returns a p-value of < 2.2e-16, this confirms our hypothesis that shooting percentage is significant in determining adjusted offensive efficiency.
+
+```{r}
+# testing additional research question
+fit7=lm(sqrt(ADJOE) ~ ADJDE + EFG_O + TOR + W + FTR + twoP_O + TORD + DRB + EFG_D , data = cbb200)
+anova(fit7, fit5)
+```
+
+Because the F test returns a p-value of < 2.2e-16, this confirms our hypothesis that offensive rebound rate is significant in determining adjusted offensive efficiency.
